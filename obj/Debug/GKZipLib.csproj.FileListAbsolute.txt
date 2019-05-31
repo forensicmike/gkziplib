@@ -1,0 +1,6 @@
+C:\Users\mike\Source\Repos\gkziplib\bin\Debug\GKZipLib.dll
+C:\Users\mike\Source\Repos\gkziplib\bin\Debug\GKZipLib.pdb
+C:\Users\mike\Source\Repos\gkziplib\obj\Debug\GKZipLib.csprojAssemblyReference.cache
+C:\Users\mike\Source\Repos\gkziplib\obj\Debug\GKZipLib.csproj.CoreCompileInputs.cache
+C:\Users\mike\Source\Repos\gkziplib\obj\Debug\GKZipLib.dll
+C:\Users\mike\Source\Repos\gkziplib\obj\Debug\GKZipLib.pdb
