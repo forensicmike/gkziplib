@@ -1,5 +1,7 @@
 ﻿using System;
 using System.IO;
+using System.IO.Compression;
+using System.Linq;
 
 namespace GKZipLib
 {
@@ -32,6 +34,22 @@ namespace GKZipLib
         public int CompressedSize { get; set; }
         public int UncompressedSize { get; set; }
 
+        private int _compressionMethod;
+        public int CompressionMethod
+        {
+            get
+            {
+                return _compressionMethod;
+            }
+            set
+            {
+                _compressionMethod = value;
+                if (value > 0)
+                    IsCompressed = true;
+            }
+        }
+        public bool IsCompressed { get; set; }
+
         // This only gets resolved for noteworthy entries, created as nullable as a reminder
         public long? FileEntryOffset { get; set; }
 
@@ -39,7 +57,7 @@ namespace GKZipLib
         /// Same as ExtractTo but uses the file's existing name within the archive.
         /// </summary>
         /// <param name="outputFolderPath">Target output path</param>
-        public void ExtractToFolder(string outputFolderPath)
+        public string ExtractToFolder(string outputFolderPath)
         {
             if (!Directory.Exists(outputFolderPath))
             {
@@ -49,12 +67,12 @@ namespace GKZipLib
                     throw new Exception("Directory issue? Doesn't exist and unable to create..");
                 }
             }
-            else
-            {
-                if (!outputFolderPath.EndsWith("\\"))
-                    outputFolderPath += "\\";
-                ExtractTo(outputFolderPath + ShortName);
-            }
+
+            if (!outputFolderPath.EndsWith("\\"))
+                outputFolderPath += "\\";
+            var final = outputFolderPath + ShortName;
+            ExtractTo(final);
+            return final;
         }
 
         /// <summary>
@@ -83,7 +101,7 @@ namespace GKZipLib
                 }
                 cur += length + 4;
             }
-            
+
             GKZipFile.DebugLog($"RE: {Name}");
             if (!bFound)
             {
@@ -98,7 +116,7 @@ namespace GKZipLib
             }
         }
 
-        
+
 
         public void ExtractTo(string outputPath)
         {
@@ -118,28 +136,115 @@ namespace GKZipLib
                 var targetOffset = FileEntryOffset.Value + 30 + n + m;
                 GKZipFile.DebugLog($"Seeking to {targetOffset} ({FileEntryOffset} + 30 + {n} + {m}");
                 fs.Seek(targetOffset, SeekOrigin.Begin);
+
+                //foreach (var c in Path.GetInvalidFileNameChars()) { outputPath = outputPath.Replace(c, '-'); }
+                //Path.GetInvalidFileNameChars().Aggregate(outputFinal, (current, c) => current.Replace(c, '-'));
                 using (var outputStream = new FileStream(outputPath, FileMode.Create))
                 {
-                    var bytesToRead = 2048;
-                    var buffer = new byte[bytesToRead];
-                    var totalBytesRead = 0;
-                    
-                    while (totalBytesRead < CompressedSize)
+                    if (CompressionMethod > 0x0)
                     {
-                        if (totalBytesRead + bytesToRead > CompressedSize)
-                        {
-                            bytesToRead = CompressedSize - totalBytesRead;
-                            buffer = new byte[bytesToRead]; // adjust the length of the buffer
-                        }
+                        GKZipFile.DebugLog("Passing file through DeflateStream as CompressionMethod is > 0x0");
 
-                        fs.Read(buffer, 0, bytesToRead);
-                        outputStream.Write(buffer, 0, bytesToRead);
-                        totalBytesRead += bytesToRead;
+                        using (var contentStream = new MemoryStream())
+                        {
+                            contentStream.SetLength(CompressedSize);
+                            fs.Read(contentStream.GetBuffer(), 0, CompressedSize);
+
+                            // contentStream now has *just* our compressed file, so we can use a deflatestream and target it
+                            using (var decompStream = new DeflateStream(contentStream, CompressionMode.Decompress))
+                            {
+                                var bytesRead = 0;
+                                //var offset = 0;
+                                var bytesToRead = 2048;
+                                var buffer = new byte[bytesToRead];
+                                var totalBytesRead = 0;
+                                while (true)
+                                {
+                                    bytesRead = decompStream.Read(buffer, 0, bytesToRead);
+                                    if (bytesRead == 0)
+                                        break;
+                                    outputStream.Write(buffer, 0, bytesRead);
+                                    totalBytesRead += bytesRead;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var bytesToRead = 2048;
+                        var buffer = new byte[bytesToRead];
+                        var totalBytesRead = 0;
+
+                        while (totalBytesRead < CompressedSize)
+                        {
+                            if (totalBytesRead + bytesToRead > CompressedSize)
+                            {
+                                bytesToRead = CompressedSize - totalBytesRead;
+                                buffer = new byte[bytesToRead]; // adjust the length of the buffer
+                            }
+
+                            fs.Read(buffer, 0, bytesToRead);
+                            outputStream.Write(buffer, 0, bytesToRead);
+                            totalBytesRead += bytesToRead;
+                        }
                     }
                     outputStream.Flush();
                     outputStream.Close();
                 }
                 fs.Close();
+            }
+        }
+
+        public byte[] PeekHeader(int length)
+        {
+            GKZipFile.DebugLog($"Extracting {Name} to memory");
+
+            if (FileEntryOffset == null)
+                GetFileEntryOffset();
+
+            using (var fs = new FileStream(Parent.ZIPPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                fs.Seek(FileEntryOffset.Value + 26, SeekOrigin.Begin);
+                var lengthBytes = new byte[4];
+                fs.Read(lengthBytes, 0, 4);
+                var n = BitConverter.ToInt16(lengthBytes, 0);
+                var m = BitConverter.ToInt16(lengthBytes, 2);
+
+                var targetOffset = FileEntryOffset.Value + 30 + n + m;
+                GKZipFile.DebugLog($"Seeking to {targetOffset} ({FileEntryOffset} + 30 + {n} + {m}");
+                fs.Seek(targetOffset, SeekOrigin.Begin);
+                using (var outputStream = new MemoryStream())
+                {
+                    if (CompressionMethod > 0x0)
+                    {
+                        GKZipFile.DebugLog("Passing file through DeflateStream as CompressionMethod is > 0x0");
+
+                        using (var contentStream = new MemoryStream())
+                        {
+                            contentStream.SetLength(CompressedSize);
+                            fs.Read(contentStream.GetBuffer(), 0, CompressedSize);
+
+                            // contentStream now has *just* our compressed file, so we can use a deflatestream and target it
+                            using (var decompStream = new DeflateStream(contentStream, CompressionMode.Decompress))
+                            {
+                                var buffer = new byte[length];
+
+                                decompStream.Read(buffer, 0, length);
+                                outputStream.Write(buffer, 0, length);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var buff = new byte[length];
+                        fs.Read(buff, 0, length);
+                        outputStream.Write(buff, 0, length);
+                    }
+                    outputStream.Flush();
+                    outputStream.Close();
+
+                    return outputStream.ToArray();
+                }
             }
         }
 
@@ -163,29 +268,107 @@ namespace GKZipLib
                 fs.Seek(targetOffset, SeekOrigin.Begin);
                 using (var outputStream = new MemoryStream())
                 {
-                    var bytesToRead = 2048;
-                    var buffer = new byte[bytesToRead];
-                    var totalBytesRead = 0;
-
-                    while (totalBytesRead < CompressedSize)
+                    if (CompressionMethod > 0x0)
                     {
-                        if (totalBytesRead + bytesToRead > CompressedSize)
-                        {
-                            bytesToRead = CompressedSize - totalBytesRead;
-                            buffer = new byte[bytesToRead]; // adjust the length of the buffer
-                        }
+                        GKZipFile.DebugLog("Passing file through DeflateStream as CompressionMethod is > 0x0");
 
-                        fs.Read(buffer, 0, bytesToRead);
-                        outputStream.Write(buffer, 0, bytesToRead);
-                        totalBytesRead += bytesToRead;
+                        using (var contentStream = new MemoryStream())
+                        {
+                            contentStream.SetLength(CompressedSize);
+                            fs.Read(contentStream.GetBuffer(), 0, CompressedSize);
+
+                            // contentStream now has *just* our compressed file, so we can use a deflatestream and target it
+                            using (var decompStream = new DeflateStream(contentStream, CompressionMode.Decompress))
+                            {
+                                var bytesRead = 0;
+                                //var offset = 0;
+                                var bytesToRead = 2048;
+                                var buffer = new byte[bytesToRead];
+                                var totalBytesRead = 0;
+                                while (true)
+                                {
+                                    bytesRead = decompStream.Read(buffer, 0, bytesToRead);
+                                    if (bytesRead == 0)
+                                        break;
+                                    outputStream.Write(buffer, 0, bytesRead);
+                                    totalBytesRead += bytesRead;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var bytesToRead = 2048;
+                        var buffer = new byte[bytesToRead];
+                        var totalBytesRead = 0;
+
+                        while (totalBytesRead < CompressedSize)
+                        {
+                            if (totalBytesRead + bytesToRead > CompressedSize)
+                            {
+                                bytesToRead = CompressedSize - totalBytesRead;
+                                buffer = new byte[bytesToRead]; // adjust the length of the buffer
+                            }
+
+                            fs.Read(buffer, 0, bytesToRead);
+                            outputStream.Write(buffer, 0, bytesToRead);
+                            totalBytesRead += bytesToRead;
+                        }
                     }
                     outputStream.Flush();
                     outputStream.Close();
-                    fs.Close();
+
                     return outputStream.ToArray();
                 }
-                
+                fs.Close();
             }
+
+
         }
+
+        //public byte[] ExtractToMemory()
+        //{
+        //    GKZipFile.DebugLog($"Extracting {Name} to memory");
+
+        //    if (FileEntryOffset == null)
+        //        GetFileEntryOffset();
+
+        //    using (var fs = new FileStream(Parent.ZIPPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        //    {
+        //        fs.Seek(FileEntryOffset.Value + 26, SeekOrigin.Begin);
+        //        var lengthBytes = new byte[4];
+        //        fs.Read(lengthBytes, 0, 4);
+        //        var n = BitConverter.ToInt16(lengthBytes, 0);
+        //        var m = BitConverter.ToInt16(lengthBytes, 2);
+
+        //        var targetOffset = FileEntryOffset.Value + 30 + n + m;
+        //        GKZipFile.DebugLog($"Seeking to {targetOffset} ({FileEntryOffset} + 30 + {n} + {m}");
+        //        fs.Seek(targetOffset, SeekOrigin.Begin);
+        //        using (var outputStream = new MemoryStream())
+        //        {
+        //            var bytesToRead = 2048;
+        //            var buffer = new byte[bytesToRead];
+        //            var totalBytesRead = 0;
+
+        //            while (totalBytesRead < CompressedSize)
+        //            {
+        //                if (totalBytesRead + bytesToRead > CompressedSize)
+        //                {
+        //                    bytesToRead = CompressedSize - totalBytesRead;
+        //                    buffer = new byte[bytesToRead]; // adjust the length of the buffer
+        //                }
+
+        //                fs.Read(buffer, 0, bytesToRead);
+        //                outputStream.Write(buffer, 0, bytesToRead);
+        //                totalBytesRead += bytesToRead;
+        //            }
+        //            outputStream.Flush();
+        //            outputStream.Close();
+        //            fs.Close();
+        //            return outputStream.ToArray();
+        //        }
+
+        //    }
+        //}
     }
 }

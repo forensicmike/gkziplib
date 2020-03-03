@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Data.SQLite;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using MikeForensicLib.SQLite;
 
 namespace GKZipLib
 {
@@ -23,6 +25,7 @@ namespace GKZipLib
         /// <param name="path"></param>
         public GKZipFile(string path, bool bStoreEntries)
         {
+            CDEntries = new List<CDEntry>();
             ZIPPath = path;
             StoringEntries = bStoreEntries;
         }
@@ -66,7 +69,7 @@ namespace GKZipLib
 
                 if (!fs.GetBytes(EOCDOffset - 76, 4).SequenceEqual(SeventySixHeader))
                 {
-                    throw new Exception("0606 not found at EOCD-76");
+                    Console.WriteLine("Warning: 0606 not found at EOCD-76");
                 }
 
                 var cdStartOffset = EOCDOffset - CDSize - 76;
@@ -96,6 +99,7 @@ namespace GKZipLib
                         LengthFileNameN = n,
                         LengthExtraFieldM = m,
                         LengthCommentK = k,
+                        CompressionMethod = BitConverter.ToInt16(CentralDirectory, curPos + 10),
                     };
 
 
@@ -144,6 +148,36 @@ namespace GKZipLib
         {
             OnCDEntryParsed += (o, e) => { entryParsedAction(e.Entry); };
             Parse(inputPath, bStoreEntries);
+        }
+
+        static public List<dynamic> Query(string path, string dbPath, string sql, dynamic parameters)
+        {
+            var ret = new List<dynamic>();
+            var inputFi = new FileInfo(path);
+            var extractionSuccess = false;
+            foreach (var cdentry in new GKZipFile(path, false))
+            {
+                if (cdentry.Name.IndexOf(dbPath, 0, StringComparison.CurrentCultureIgnoreCase) == 0)
+                {
+                    // extract it
+                    cdentry.ExtractTo(inputFi.Directory.FullName + "\\" + cdentry.ShortName);
+                    extractionSuccess = true;
+                }
+            }
+
+            if (extractionSuccess)
+            {
+                using (var con = new SQLiteConnection(@"Data Source=" + inputFi.Directory.FullName + "\\" + dbPath.Split('/').Last()))
+                {
+                    con.Open();
+
+                    ret.AddRange(con.Query(sql, (object)parameters));
+
+                    con.Close();
+                }
+            }
+
+            return ret;
         }
 
         /// <summary>
@@ -197,6 +231,7 @@ namespace GKZipLib
                         LengthFileNameN = n,
                         LengthExtraFieldM = m,
                         LengthCommentK = k,
+                        CompressionMethod = BitConverter.ToInt16(CentralDirectory, curPos + 10),
                     };
 
                     OnCDEntryParsed(this, new CDEntryEventArgs() { Entry = cd });
@@ -219,7 +254,7 @@ namespace GKZipLib
         static public void DebugLog(string info)
         {
             if (bDebugToConsole)
-                GKZipFile.DebugLog(info);
+                Console.WriteLine(info);
         }
 
         static public readonly byte[] LocalFileHeader = new byte[] { 0x50, 0x4b, 0x03, 0x04 };
