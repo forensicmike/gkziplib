@@ -13,7 +13,7 @@ namespace GKZipLib
     public class GKZipFile: IEnumerable<CDEntry>
     {
         /// <summary>
-        /// Parameterless constructor is intended to be used with the Parse method. 
+        /// Parameterless constructor is intended to be used with the Parse method.
         /// </summary>
         public GKZipFile()
         {
@@ -111,7 +111,7 @@ namespace GKZipLib
                     yield return cd;
 
 
-                    
+
                 }
                 fs.Close();
                 TriggerParsingCompleted();
@@ -137,7 +137,7 @@ namespace GKZipLib
                 GKZipFile.bDebugToConsole = value;
             }
         }
-        
+
         /// <summary>
         /// This is an alternative way to invoke parsing without having to set the OnCDEntryParsed event first.
         /// </summary>
