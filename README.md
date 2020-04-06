@@ -27,3 +27,5 @@ To build from source, first clone the repo:
     git submodule update --init
 
 Once that's done, you can open GKZipLib.sln and should be able to build.
+
+![CI](https://github.com/forensicmike/gkziplib/workflows/CI/badge.svg)
