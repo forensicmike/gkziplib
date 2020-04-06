@@ -25,7 +25,7 @@
   </ItemGroup>
   <ItemGroup>
     <Reference Include="MikeForensicLib">
-      <HintPath>..\csharp projects\DLLs\MikeForensicLib.dll</HintPath>
+      <HintPath>.\MikeForensicLib\bin\Debug\net471</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>

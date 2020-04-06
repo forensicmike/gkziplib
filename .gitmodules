@@ -1,0 +1,3 @@
+[submodule "MikeForensicLib"]
+	path = MikeForensicLib
+	url = https://github.com/forensicmike/MikeForensicLib.git
