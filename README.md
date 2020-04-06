@@ -12,6 +12,10 @@ Probably the most potent usage of this is what I'm going to call "LINQ to GKZip"
 
 Contact the author on Discord - forensicmike#6426 or Twitter DM @forensicmike1
 
+## Precompiled
+
+See [Releases](https://github.com/forensicmike/gkziplib/releases)
+
 ## Building from source
 
 To build from source, first clone the repo:
